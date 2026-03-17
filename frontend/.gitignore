@@ -1,0 +1,25 @@
+# Node-specific
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Editor-specific
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Log-specific
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS-specific
+.DS_Store
+Thumbs.db
