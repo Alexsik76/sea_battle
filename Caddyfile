@@ -1,0 +1,19 @@
+localhost {
+    # Proxy API requests to backend
+    handle_path /api* {
+        reverse_proxy backend:8000
+    }
+
+    # Proxy WebSocket requests to backend
+    handle /ws* {
+        reverse_proxy backend:8000
+    }
+
+    # Proxy all other requests to frontend
+    handle {
+        root * /srv
+        try_files {path} /index.html
+        file_server
+    }
+}
+

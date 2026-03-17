@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+hypercorn
+pydantic
+python-multipart
+websockets
+aiofiles
