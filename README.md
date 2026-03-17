@@ -1,5 +1,7 @@
 # Sea Battle
 
+[![Backend Tests](https://github.com/Alexsik76/sea_battle/actions/workflows/tests.yml/badge.svg)](https://github.com/Alexsik76/sea_battle/actions/workflows/tests.yml)
+
 A modern, responsive, and real-time multiplayer implementation of the classic Sea Battle game. Built with a focus on fluid UX, proportional scaling, and a premium "command center" aesthetic.
 
 ## 🚀 Features
