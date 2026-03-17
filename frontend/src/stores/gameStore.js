@@ -15,6 +15,10 @@ export const useGameStore = defineStore('game', () => {
   const userName = ref(savedUserName || '')
   const isProfileSet = computed(() => userName.value !== null && userName.value !== '')
   const playerNames = ref({}) // id -> name
+  const opponentName = computed(() => {
+    const opponentId = Object.keys(playerNames.value).find(id => id !== playerId.value)
+    return playerNames.value[opponentId] || 'Waiting...'
+  })
 
   const gameState = ref('lobby') // lobby, setup, playing, finished
   const socket = ref(null)
@@ -52,6 +56,7 @@ export const useGameStore = defineStore('game', () => {
     currentShipCoords.value = []
     finalizedShips.value = []
     board.value = Array(10).fill().map(() => Array(10).fill(null))
+    opponentBoard.value = Array(10).fill().map(() => Array(10).fill(null))
     errorMessage.value = null
   }
 
@@ -93,12 +98,26 @@ export const useGameStore = defineStore('game', () => {
       const data = JSON.parse(event.data)
       handleMessage(data)
     }
+    socket.value.onclose = (event) => {
+      socket.value = null
+      // 1008 is our "Game not found" or "Game Error" code
+      if (event.code === 1008) {
+        localStorage.removeItem('sea_battle_game_id')
+        gameId.value = null
+        gameState.value = 'lobby'
+        connectToLobby()
+      } else if (gameId.value && gameState.value !== 'finished') {
+        // Try to reconnect if the game is still active
+        setTimeout(() => connect(), 3000)
+      }
+    }
   }
 
   function handleMessage(data) {
     if (data.event === 'sync_state') {
       gameState.value = data.status
       if (data.board) board.value = data.board
+      if (data.opponent_board) opponentBoard.value = data.opponent_board
       if (data.player_names) playerNames.value = data.player_names
       if (data.status === 'playing') isMyTurn.value = data.turn === playerId.value
       
@@ -159,9 +178,22 @@ export const useGameStore = defineStore('game', () => {
     socket.value.send(JSON.stringify({ event: 'place_ships', ships }))
   }
 
+  function leaveGame() {
+    if (socket.value) {
+      socket.value.close()
+      socket.value = null
+    }
+    gameId.value = null
+    localStorage.removeItem('sea_battle_game_id')
+    gameState.value = 'lobby'
+    resetPlacement()
+    connectToLobby()
+  }
+
   return {
     gameId, playerId, userName, isProfileSet, playerNames, gameState, board, opponentBoard, isMyTurn, winner, lobbyGames, errorMessage,
-    SHIPS_TO_PLACE, currentShipIndex, currentShipCoords, finalizedShips,
-    connect, connectToLobby, fetchGames, createGame, shoot, placeShips, resetPlacement, setUserName
+    SHIPS_TO_PLACE, currentShipIndex, currentShipCoords, finalizedShips, opponentName,
+    connect, connectToLobby, fetchGames, createGame, shoot, placeShips, resetPlacement, setUserName, leaveGame
   }
-})
+  })
+

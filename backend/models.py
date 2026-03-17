@@ -78,6 +78,13 @@ class Board(BaseModel):
     def all_sunk(self) -> bool:
         return all(ship.is_sunk for ship in self.ships)
 
+    def get_opponent_view(self) -> List[List[Optional[str]]]:
+        """Returns the grid from the opponent's perspective (hiding 'ship' tags)."""
+        view = []
+        for row in self.grid:
+            view.append([cell if cell in ["hit", "miss"] else None for cell in row])
+        return view
+
 class Player(BaseModel):
     id: str
     name: str = "Player"
@@ -87,10 +94,23 @@ class Player(BaseModel):
 
 class Game(BaseModel):
     game_id: str
-    players: List[str] = Field(default_factory=list) # List of IDs for order
+    name: str
+    players: List[str] = Field(default_factory=list)
     player_map: Dict[str, Player] = Field(default_factory=dict)
     turn: int = 0
-    status: str = "waiting" # waiting, setup, playing, finished
+    status: str = "waiting"
+
+    def to_summary(self) -> dict:
+        """Returns a summary of the game for the lobby list."""
+        return {
+            "id": self.game_id,
+            "name": self.name,
+            "players": len(self.players),
+            "online_players": len([p for p in self.player_map.values() if p.online]),
+            "player_names": [p.name for p in self.player_map.values()],
+            "player_ids": self.players,
+            "status": self.status
+        }
 
     def add_player(self, player_id: str, name: str = None):
         if player_id in self.player_map:

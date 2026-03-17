@@ -28,7 +28,7 @@ Simply run the following command in the root directory:
 docker compose up --build
 ```
 
-The application will be available at `http://localhost:8080` (or the port defined in your `docker-compose.yml`).
+The application will be available at `http://localhost` (or the port defined in your `docker-compose.yml`).
 
 ## 📁 Project Structure
 

@@ -1,13 +1,12 @@
 from connection_manager import ConnectionManager
-from typing import Dict
-from models import Game
+from game_service import GameService
 
 # Singletons for dependency injection
 _manager = ConnectionManager()
-_games: Dict[str, Game] = {}
+_game_service = GameService(_manager)
 
 def get_manager() -> ConnectionManager:
     return _manager
 
-def get_games() -> Dict[str, Game]:
-    return _games
+def get_game_service() -> GameService:
+    return _game_service

@@ -64,7 +64,7 @@ const handleCellClick = (x, y) => {
 <template>
   <div class="relative flex flex-col items-center">
     <!-- Board with Labels and Grid -->
-    <div class="inline-grid grid-cols-[1.5rem_repeat(10,min(3.8vh,7.2vw))] grid-rows-[1.5rem_repeat(10,min(3.8vh,7.2vw))] gap-[1px] bg-white/20 p-[1px] rounded-lg shadow-2xl overflow-hidden shrink-0 border border-white/10">
+    <div class="grid-board gap-[1px] bg-white/20 p-[1px] rounded-lg shadow-2xl overflow-hidden shrink-0 border border-white/10">
       
       <!-- Top-Left empty corner -->
       <div class="w-full h-full bg-[#0f172a]"></div>

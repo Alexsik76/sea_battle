@@ -5,3 +5,5 @@ pydantic
 python-multipart
 websockets
 aiofiles
+pytest
+httpx

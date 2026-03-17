@@ -39,8 +39,14 @@ class ConnectionManager:
 
     async def broadcast(self, message: dict, game_id: str):
         if game_id in self.active_connections:
-            for connection in self.active_connections[game_id]:
-                await connection.send_json(message)
+            # Create a copy of the list to avoid issues if a disconnect happens during iteration
+            connections = list(self.active_connections[game_id])
+            for connection in connections:
+                try:
+                    await connection.send_json(message)
+                except Exception:
+                    # Cleanup will be handled by the disconnect handler in main.py
+                    pass
 
     async def broadcast_lobby(self, message: dict):
         for connection in self.lobby_connections:
