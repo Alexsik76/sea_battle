@@ -1,14 +1,11 @@
 import pytest
 from fastapi.testclient import TestClient
-from fastapi.websockets import WebSocket
 from main import app
-from dependencies import get_manager, get_game_service
-from models import Game, Board, Player, Ship
+from dependencies import get_game_service
+from models import Game, Board
 from exceptions import ShipPlacementError, InvalidMoveError, GameStateError, PlayerNotFoundError, GameError
 from connection_manager import ConnectionManager
 from game_service import GameService
-import json
-import asyncio
 
 client = TestClient(app)
 
