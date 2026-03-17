@@ -1,4 +1,6 @@
+from typing import Any, cast
 import pytest
+from fastapi import WebSocket
 from fastapi.testclient import TestClient
 from main import app
 from dependencies import get_game_service
@@ -16,8 +18,9 @@ async def test_connection_manager():
     manager = ConnectionManager()
     
     # Mock WebSocket
-    class MockWebSocket:
+    class MockWebSocket(WebSocket):
         def __init__(self):
+            # We don't call super().__init__ to avoid needing real scope/receive/send
             self.sent = []
             self.accepted = False
             self.closed = False
@@ -28,7 +31,8 @@ async def test_connection_manager():
         async def close(self, code=1000):
             self.closed = True
 
-    ws1 = MockWebSocket()
+    # Use Any to satisfy Pylance
+    ws1 = cast(Any, MockWebSocket())
     async def mock_accept(): pass
     ws1.accept = mock_accept
 
@@ -36,7 +40,7 @@ async def test_connection_manager():
     assert manager.active_connections["game1"] == [ws1]
     assert manager.ws_to_game[ws1] == "game1"
 
-    ws_lobby = MockWebSocket()
+    ws_lobby = cast(Any, MockWebSocket())
     ws_lobby.accept = mock_accept
     await manager.connect_lobby(ws_lobby)
     assert ws_lobby in manager.lobby_connections
@@ -58,7 +62,7 @@ async def test_connection_manager():
     assert ws1 not in manager.ws_to_game
 
     # Test broadcast with exception
-    ws2 = MockWebSocket()
+    ws2 = cast(Any, MockWebSocket())
     ws2.accept = mock_accept
     await manager.connect(ws2, "game2")
     async def raise_err(data): raise Exception("fail")
@@ -81,6 +85,7 @@ def test_game_service():
     assert gid in service.games
     
     game = service.get_game(gid)
+    assert game is not None
     assert game.name == "Test"
     
     assert service.get_game("nonexistent") is None
