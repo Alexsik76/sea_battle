@@ -1,37 +1,31 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
+import { useLocalStorage, useWebSocket } from '@vueuse/core'
 
 export const useGameStore = defineStore('game', () => {
-  const savedGameId = localStorage.getItem('sea_battle_game_id')
-  const gameId = ref(savedGameId || null)
+  // Persistence
+  const gameId = useLocalStorage('sea_battle_game_id', null)
+  const playerId = useLocalStorage('sea_battle_player_id', Math.random().toString(36).substring(7))
+  const userName = useLocalStorage('sea_battle_user_name', '')
   
-  // Persist playerId in localStorage
-  const savedPlayerId = localStorage.getItem('sea_battle_player_id')
-  const initialPlayerId = savedPlayerId || Math.random().toString(36).substring(7)
-  if (!savedPlayerId) localStorage.setItem('sea_battle_player_id', initialPlayerId)
-  
-  const playerId = ref(initialPlayerId)
-  const savedUserName = localStorage.getItem('sea_battle_user_name')
-  const userName = ref(savedUserName || '')
+  if (gameId.value === 'null') gameId.value = null
+
   const isProfileSet = computed(() => userName.value !== null && userName.value !== '')
-  const playerNames = ref({}) // id -> name
+  const playerNames = ref({}) 
   const opponentName = computed(() => {
     const opponentId = Object.keys(playerNames.value).find(id => id !== playerId.value)
     return playerNames.value[opponentId] || 'Waiting...'
   })
 
-  const gameState = ref('lobby') // lobby, setup, playing, finished
-  const socket = ref(null)
-  const lobbySocket = ref(null)
-
-  const board = ref(Array(10).fill().map(() => Array(10).fill(null)))
-  const opponentBoard = ref(Array(10).fill().map(() => Array(10).fill(null)))
+  const gameState = ref('lobby')
   const isMyTurn = ref(false)
   const winner = ref(null)
   const lobbyGames = ref([])
   const errorMessage = ref(null)
 
-  // Ship placement state
+  const board = ref(Array(10).fill().map(() => Array(10).fill(null)))
+  const opponentBoard = ref(Array(10).fill().map(() => Array(10).fill(null)))
+
   const SHIPS_TO_PLACE = [
     { name: 'Battleship', size: 4 },
     { name: 'Cruiser 1', size: 3 }, { name: 'Cruiser 2', size: 3 },
@@ -42,75 +36,86 @@ export const useGameStore = defineStore('game', () => {
   const currentShipCoords = ref([])
   const finalizedShips = ref([])
 
-  function setUserName(name) {
-    userName.value = name
-    if (name === null) {
-      localStorage.removeItem('sea_battle_user_name')
-    } else {
-      localStorage.setItem('sea_battle_user_name', name)
-    }
-  }
-
-  function resetPlacement() {
-    currentShipIndex.value = 0
-    currentShipCoords.value = []
-    finalizedShips.value = []
-    board.value = Array(10).fill().map(() => Array(10).fill(null))
-    opponentBoard.value = Array(10).fill().map(() => Array(10).fill(null))
-    errorMessage.value = null
-  }
-
-  function connectToLobby() {
-    if (lobbySocket.value) return
-    
+  // --- LOBBY (Still using VueUse as it's simple enough) ---
+  const lobbyWsUrl = computed(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const host = window.location.host
-    const wsUrl = `${protocol}//${host}/ws/lobby`
-    
-    lobbySocket.value = new WebSocket(wsUrl)
-    lobbySocket.value.onmessage = (event) => {
-      const data = JSON.parse(event.data)
-      if (data.event === 'lobby_update') {
-        lobbyGames.value = data.games
-      }
-    }
-    lobbySocket.value.onclose = () => {
-      lobbySocket.value = null
-      setTimeout(connectToLobby, 3000)
-    }
-  }
+    return `${protocol}//${window.location.host}/ws/lobby`
+  })
+  const { data: lobbyData } = useWebSocket(lobbyWsUrl, { autoReconnect: true, heartbeat: false })
+  watch(lobbyData, (newData) => {
+    if (!newData) return
+    try {
+      const data = JSON.parse(newData)
+      if (data.event === 'lobby_update') lobbyGames.value = data.games
+    } catch (e) { console.error("Lobby parse error", e) }
+  })
+
+  // --- GAME SOCKET (Manual control for reliability) ---
+  const socket = ref(null)
+  const gameWsStatus = ref('CLOSED')
 
   function connect(gid) {
-    if (gid) {
-      gameId.value = gid
-      localStorage.setItem('sea_battle_game_id', gid)
+    const targetGid = gid || gameId.value
+    if (!targetGid || targetGid === 'null') {
+      gameId.value = null
+      return
     }
-    const currentGid = gid || gameId.value
-    if (!currentGid) return
 
-    errorMessage.value = null
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const host = window.location.host
-    const wsUrl = `${protocol}//${host}/ws/${currentGid}/${playerId.value}?name=${encodeURIComponent(userName.value)}`
-    
-    socket.value = new WebSocket(wsUrl)
-    socket.value.onmessage = (event) => {
-      const data = JSON.parse(event.data)
-      handleMessage(data)
+    // Close existing socket if any
+    if (socket.value) {
+      socket.value.onclose = null // Prevent triggering disconnection logic
+      socket.value.close()
     }
-    socket.value.onclose = (event) => {
+
+    gameId.value = targetGid
+    errorMessage.value = null
+    gameState.value = 'waiting' // Default state until sync
+    
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const url = `${protocol}//${window.location.host}/ws/${targetGid}/${playerId.value}?name=${encodeURIComponent(userName.value)}`
+    
+    console.log("Connecting to Game WebSocket:", targetGid)
+    gameWsStatus.value = 'CONNECTING'
+    
+    const ws = new WebSocket(url)
+    socket.value = ws
+
+    ws.onopen = () => {
+      console.log("Game Socket Connected")
+      gameWsStatus.value = 'OPEN'
+    }
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        handleMessage(data)
+      } catch (e) { console.error("Message parse error", e) }
+    }
+
+    ws.onclose = (event) => {
+      console.log("Game Socket Closed", event.code)
+      gameWsStatus.value = 'CLOSED'
       socket.value = null
-      // 1008 is our "Game not found" or "Game Error" code
-      if (event.code === 1008) {
-        localStorage.removeItem('sea_battle_game_id')
+      
+      // If server rejected (1008) or abnormal close (1006) on a specific game
+      if (event.code === 1008 || event.code === 1006) {
+        console.log("Game session invalid, returning to lobby")
         gameId.value = null
         gameState.value = 'lobby'
-        connectToLobby()
-      } else if (gameId.value && gameState.value !== 'finished') {
-        // Try to reconnect if the game is still active
-        setTimeout(() => connect(), 3000)
+      } else if (gameId.value) {
+        // Try to reconnect if we still have a gameId
+        setTimeout(() => connect(), 2000)
       }
     }
+
+    ws.onerror = (err) => {
+      console.error("WebSocket Error:", err)
+    }
+  }
+
+  // Auto-connect on startup
+  if (gameId.value) {
+    setTimeout(() => connect(), 500)
   }
 
   function handleMessage(data) {
@@ -120,7 +125,6 @@ export const useGameStore = defineStore('game', () => {
       if (data.opponent_board) opponentBoard.value = data.opponent_board
       if (data.player_names) playerNames.value = data.player_names
       if (data.status === 'playing') isMyTurn.value = data.turn === playerId.value
-      
       if (data.ships && data.ships.length > 0) {
           finalizedShips.value = data.ships
           currentShipIndex.value = SHIPS_TO_PLACE.length
@@ -141,7 +145,7 @@ export const useGameStore = defineStore('game', () => {
     } else if (data.event === 'game_over') {
       gameState.value = 'finished'
       winner.value = data.winner
-      localStorage.removeItem('sea_battle_game_id')
+      gameId.value = null
     } else if (data.event === 'error') {
       errorMessage.value = data.message
       if (data.message.includes('placement')) resetPlacement()
@@ -150,50 +154,46 @@ export const useGameStore = defineStore('game', () => {
     }
   }
 
-  async function fetchGames() {
-    const res = await fetch('/api/games')
-    lobbyGames.value = await res.json()
-  }
-
   async function createGame(name) {
     const res = await fetch('/api/games/create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-          name, 
-          player_id: playerId.value, 
-          player_name: userName.value 
-      })
+      body: JSON.stringify({ name, player_id: playerId.value, player_name: userName.value })
     })
     const data = await res.json()
     connect(data.game_id)
   }
 
+  function setUserName(name) { userName.value = name }
+  function resetPlacement() {
+    currentShipIndex.value = 0
+    currentShipCoords.value = []
+    finalizedShips.value = []
+    board.value = Array(10).fill().map(() => Array(10).fill(null))
+    opponentBoard.value = Array(10).fill().map(() => Array(10).fill(null))
+    errorMessage.value = null
+  }
   function shoot(x, y) {
-    if (!isMyTurn.value) return
+    if (!isMyTurn.value || !socket.value) return
     socket.value.send(JSON.stringify({ event: 'shoot', x, y }))
   }
-
   function placeShips(ships) {
+    if (!socket.value) return
     socket.value.send(JSON.stringify({ event: 'place_ships', ships }))
   }
-
   function leaveGame() {
+    gameId.value = null
     if (socket.value) {
       socket.value.close()
       socket.value = null
     }
-    gameId.value = null
-    localStorage.removeItem('sea_battle_game_id')
     gameState.value = 'lobby'
     resetPlacement()
-    connectToLobby()
   }
 
   return {
     gameId, playerId, userName, isProfileSet, playerNames, gameState, board, opponentBoard, isMyTurn, winner, lobbyGames, errorMessage,
-    SHIPS_TO_PLACE, currentShipIndex, currentShipCoords, finalizedShips, opponentName,
-    connect, connectToLobby, fetchGames, createGame, shoot, placeShips, resetPlacement, setUserName, leaveGame
+    SHIPS_TO_PLACE, currentShipIndex, currentShipCoords, finalizedShips, opponentName, gameWsStatus,
+    connect, createGame, shoot, placeShips, resetPlacement, setUserName, leaveGame
   }
-  })
-
+})

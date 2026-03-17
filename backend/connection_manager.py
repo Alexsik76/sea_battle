@@ -1,6 +1,7 @@
 from fastapi import WebSocket
 from typing import Dict, List
 
+
 class ConnectionManager:
     def __init__(self):
         # game_id -> [player1_ws, player2_ws]
@@ -53,4 +54,4 @@ class ConnectionManager:
             try:
                 await connection.send_json(message)
             except Exception:
-                pass # Already disconnected probably
+                pass  # Already disconnected probably

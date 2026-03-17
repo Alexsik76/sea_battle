@@ -3,6 +3,7 @@ from typing import Dict, List, Optional
 from models import Game
 from connection_manager import ConnectionManager
 
+
 class GameService:
     def __init__(self, manager: ConnectionManager):
         self.games: Dict[str, Game] = {}
@@ -26,7 +27,6 @@ class GameService:
 
     async def broadcast_lobby_update(self):
         """Notify all lobby users of game changes."""
-        await self.manager.broadcast_lobby({
-            "event": "lobby_update", 
-            "games": self.list_games()
-        })
+        await self.manager.broadcast_lobby(
+            {"event": "lobby_update", "games": self.list_games()}
+        )

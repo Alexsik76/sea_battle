@@ -43,9 +43,80 @@ const store = useGameStore()
         </div>
         <Lobby />
       </div>
-      <div v-else-if="store.gameState === 'waiting'" class="card p-12 flex flex-col items-center gap-6">
-        <h2 class="text-2xl font-bold text-white uppercase tracking-widest">Searching Sector</h2>
-        <div class="radar-scan"></div>
+      <div v-else-if="store.gameState === 'waiting'" class="card p-16 flex flex-col items-center gap-10 min-w-400px">
+        <div class="relative w-48 h-48 flex items-center justify-center">
+          <!-- Background Grid Rings -->
+          <div class="absolute inset-0 border-2 border-sky-500/10 rounded-full"></div>
+          <div class="absolute inset-4 border-2 border-sky-500/5 rounded-full"></div>
+          <div class="absolute inset-12 border-2 border-sky-500/5 rounded-full"></div>
+          
+          <!-- Sonar Sweep -->
+          <div class="radar-scan absolute inset-0 opacity-40"></div>
+          
+          <!-- Pulsing Ripples -->
+          <div v-for="i in 3" :key="i"
+            v-motion
+            :initial="{ scale: 0.1, opacity: 0.8 }"
+            :enter="{ 
+              scale: 1.5, 
+              opacity: 0,
+              transition: { 
+                duration: 3000, 
+                repeat: Infinity,
+                delay: i * 1000,
+                ease: 'easeOut'
+              } 
+            }"
+            class="absolute inset-0 border-2 border-sky-400 rounded-full"
+          ></div>
+
+          <!-- Random Blips (Scanning targets) -->
+          <div v-for="i in 2" :key="'blip-'+i"
+            v-motion
+            :initial="{ opacity: 0, scale: 0 }"
+            :enter="{ 
+              opacity: [0, 1, 0],
+              scale: [0.5, 1.2, 0.5],
+              transition: { 
+                duration: 2000, 
+                repeat: Infinity,
+                delay: i * 1500,
+              } 
+            }"
+            class="absolute w-3 h-3 bg-rose-500 rounded-full shadow-[0_0_15px_#f43f5e]"
+            :style="{ 
+              top: i === 1 ? '30%' : '70%', 
+              left: i === 1 ? '65%' : '25%' 
+            }"
+          ></div>
+
+          <div class="z-10 text-sky-400 font-black text-xl tracking-[0.3em] animate-pulse">
+            SCANNING
+          </div>
+        </div>
+
+        <div class="flex flex-col items-center gap-3">
+          <h2 class="text-2xl font-black text-white uppercase tracking-[0.5em] m-0">
+            Searching Sector
+          </h2>
+          <div class="flex gap-2">
+            <div v-for="i in 3" :key="'dot-'+i"
+              v-motion
+              :initial="{ y: 0 }"
+              :enter="{ 
+                y: -5,
+                transition: { 
+                  duration: 400, 
+                  repeat: Infinity, 
+                  repeatType: 'reverse',
+                  delay: i * 150,
+                } 
+              }"
+              class="w-2 h-2 bg-sky-400 rounded-full"
+            ></div>
+          </div>
+          <p class="text-sm opacity-40 uppercase tracking-widest mt-2">Waiting for another Admiral to join</p>
+        </div>
       </div>
       <div v-else-if="store.gameState === 'finished'" class="card p-12 text-center flex flex-col gap-6 items-center">
         <h2 class="text-xl opacity-60 uppercase tracking-widest">End of Battle</h2>

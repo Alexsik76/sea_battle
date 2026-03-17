@@ -9,7 +9,7 @@ const props = defineProps({
 })
 
 const store = useGameStore()
-const { isValidPlacement, autoPlaceShips } = usePlacement()
+const { isValidPlacement } = usePlacement()
 
 const COLS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']
 const ROWS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']

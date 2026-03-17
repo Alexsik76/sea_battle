@@ -1,14 +1,14 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
 import { useGameStore } from '../stores/gameStore'
+import { useFocus } from '@vueuse/core'
 import GameListItem from './GameListItem.vue'
 
 const store = useGameStore()
 const newGameName = ref('')
+const inputRef = ref(null)
 
-onMounted(() => {
-  store.connectToLobby()
-})
+useFocus(inputRef, { initialValue: true })
 
 const handleCreate = () => {
   if (newGameName.value.trim()) {
@@ -23,7 +23,7 @@ const handleCreate = () => {
     <section class="flex flex-col gap-4">
       <h3 class="text-lg font-bold">Create New Game</h3>
       <div class="flex gap-2">
-        <input v-model="newGameName" class="input-text flex-1" placeholder="Game Name" @keyup.enter="handleCreate">
+        <input ref="inputRef" v-model="newGameName" class="input-text flex-1" placeholder="Game Name" @keyup.enter="handleCreate">
         <button class="btn-primary" @click="handleCreate" :disabled="!newGameName.trim()">Create</button>
       </div>
     </section>

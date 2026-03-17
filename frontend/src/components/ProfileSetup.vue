@@ -1,9 +1,13 @@
 <script setup>
 import { ref } from 'vue'
 import { useGameStore } from '../stores/gameStore'
+import { useFocus } from '@vueuse/core'
 
 const store = useGameStore()
 const name = ref(store.userName)
+const inputRef = ref(null)
+
+useFocus(inputRef, { initialValue: true })
 
 const handleSave = () => {
   store.setUserName(name.value.trim())
@@ -16,6 +20,7 @@ const handleSave = () => {
     <div class="flex flex-col gap-2 text-left">
       <label class="text-sm opacity-80">Enter your Admiral name:</label>
       <input 
+        ref="inputRef"
         v-model="name" 
         type="text" 
         class="input-text"

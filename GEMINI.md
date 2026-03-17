@@ -48,5 +48,6 @@ uvicorn main:app --reload
   - **FastAPI** drives the API and WebSocket handlers.
   - Core game state and connections are abstracted (e.g., `connection_manager.py` for WebSockets, `models.py` for game entities).
   - Validation and data structuring are handled by **Pydantic** models (found in the `dto/` package).
+  - Never install Python packages globally. Always create and activate a virtual environment (`python -m venv venv`) before using `pip`.
 - **Networking**:
   - The `Caddyfile` handles local reverse proxy rules: `/api*` and `/ws*` map to the FastAPI backend at port 8000. All other routes try to match frontend files or fallback to `/index.html`.

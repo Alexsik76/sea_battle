@@ -1,5 +1,5 @@
 import logging
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, Request
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -22,6 +22,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 # Exception handler for game-related errors
 @app.exception_handler(GameError)
 async def game_error_handler(request: Request, exc: GameError):
@@ -30,107 +31,179 @@ async def game_error_handler(request: Request, exc: GameError):
         content={"error": str(exc)},
     )
 
+
 @app.get("/games")
 async def list_games(service: GameService = Depends(get_game_service)):
     return service.list_games()
 
+
 @app.post("/games/create")
 async def create_game(
-    request: CreateGameRequest, 
-    service: GameService = Depends(get_game_service)
+    request: CreateGameRequest, service: GameService = Depends(get_game_service)
 ):
     game_id = service.create_game(request.name, request.player_id, request.player_name)
     await service.broadcast_lobby_update()
     return {"game_id": game_id}
 
+
 @app.websocket("/ws/lobby")
 async def lobby_websocket(
     websocket: WebSocket,
     manager: ConnectionManager = Depends(get_manager),
-    service: GameService = Depends(get_game_service)
+    service: GameService = Depends(get_game_service),
 ):
     await manager.connect_lobby(websocket)
     try:
         # Send initial list
-        await manager.send_personal_message({"event": "lobby_update", "games": service.list_games()}, websocket)
+        await manager.send_personal_message(
+            {"event": "lobby_update", "games": service.list_games()}, websocket
+        )
         while True:
-            await websocket.receive_text() # Keep-alive
+            await websocket.receive_text()  # Keep-alive
     except WebSocketDisconnect:
         manager.disconnect_lobby(websocket)
 
+
 @app.websocket("/ws/{game_id}/{player_id}")
 async def game_websocket_endpoint(
-    websocket: WebSocket, 
-    game_id: str, 
+    websocket: WebSocket,
+    game_id: str,
     player_id: str,
-    name: str = None, 
+    name: str = None,
     manager: ConnectionManager = Depends(get_manager),
-    service: GameService = Depends(get_game_service)
+    service: GameService = Depends(get_game_service),
 ):
+    # Accept connection first to avoid 403 Forbidden during handshake
+    await websocket.accept()
+
     game = service.get_game(game_id)
     if not game:
-        await websocket.close(code=1008, reason="Game not found")
+        await websocket.send_json({"event": "error", "message": "Game not found"})
+        await websocket.close(code=1008)
         return
 
     try:
         game.add_player(player_id, name)
         player_obj = game.player_map[player_id]
-        
-        await manager.connect(websocket, game_id)
+
+        # Register connection in manager (without re-calling accept)
+        if game_id not in manager.active_connections:
+            manager.active_connections[game_id] = []
+        manager.active_connections[game_id].append(websocket)
+        manager.ws_to_game[websocket] = game_id
+
         player_obj.online = True
         await service.broadcast_lobby_update()
-        
+
         # Initial state sync
         opponent_id = next((id for id in game.players if id != player_id), None)
         opponent_view = None
         if opponent_id:
             opponent_view = game.player_map[opponent_id].board.get_opponent_view()
 
-        await manager.send_personal_message({
-            "event": "sync_state",
-            "status": game.status,
-            "players": game.players,
-            "player_names": {p.id: p.name for p in game.player_map.values()},
-            "board": player_obj.board.grid,
-            "opponent_board": opponent_view,
-            "ships": [{"name": s.name, "size": s.size, "coords": s.coordinates} for s in player_obj.board.ships],
-            "turn": game.players[game.turn] if game.status == "playing" else None
-        }, websocket)
+        await manager.send_personal_message(
+            {
+                "event": "sync_state",
+                "status": game.status,
+                "players": game.players,
+                "player_names": {p.id: p.name for p in game.player_map.values()},
+                "board": player_obj.board.grid,
+                "opponent_board": opponent_view,
+                "ships": [
+                    {"name": s.name, "size": s.size, "coords": s.coordinates}
+                    for s in player_obj.board.ships
+                ],
+                "turn": game.players[game.turn] if game.status == "playing" else None,
+            },
+            websocket,
+        )
 
         # Broadcast join info
         if game.status == "setup":
-            await manager.broadcast({"event": "game_setup", "players": game.players, "player_names": {p.id: p.name for p in game.player_map.values()}}, game_id)
+            await manager.broadcast(
+                {
+                    "event": "game_setup",
+                    "players": game.players,
+                    "player_names": {p.id: p.name for p in game.player_map.values()},
+                },
+                game_id,
+            )
         elif game.status == "playing":
-            await manager.broadcast({"event": "player_reconnected", "player_id": player_id}, game_id)
+            await manager.broadcast(
+                {"event": "player_reconnected", "player_id": player_id}, game_id
+            )
         else:
-            await manager.broadcast({"event": "player_joined", "player_id": player_id, "name": player_obj.name}, game_id)
+            await manager.broadcast(
+                {
+                    "event": "player_joined",
+                    "player_id": player_id,
+                    "name": player_obj.name,
+                },
+                game_id,
+            )
 
         while True:
-            data = await websocket.receive_json()
-            await handle_game_event(websocket, game, player_id, data, manager, service)
+            # Receive text first to handle potential empty heartbeat messages
+            message = await websocket.receive_text()
+            if not message.strip():
+                continue
 
+            try:
+                import json
+
+                data = json.loads(message)
+                await handle_game_event(
+                    websocket, game, player_id, data, manager, service
+                )
+            except json.JSONDecodeError:
+                logger.warning(f"Received invalid JSON from player {player_id}")
+                continue
+
+    except GameError as e:
+        try:
+            await websocket.send_json({"event": "error", "message": str(e)})
+            await websocket.close(code=1008)
+        except:
+            pass
     except (WebSocketDisconnect, ConnectionResetError):
-        player_obj.online = False
+        # Safely update online status if game and player exist
+        if game and player_id in game.player_map:
+            game.player_map[player_id].online = False
+
         manager.disconnect(websocket)
-        await manager.broadcast({"event": "player_disconnected", "player_id": player_id}, game_id)
+
+        if game:
+            await manager.broadcast(
+                {"event": "player_disconnected", "player_id": player_id}, game_id
+            )
         await service.broadcast_lobby_update()
     except Exception as e:
         logger.error(f"Error in game WebSocket: {e}", exc_info=True)
-        if websocket.client_state.name != 'DISCONNECTED':
-            await websocket.close(code=1011)
+        try:
+            if websocket.client_state.name != "DISCONNECTED":
+                await websocket.close(code=1011)
+        except:
+            pass
 
-async def handle_game_event(websocket: WebSocket, game, player_id, data, manager, service):
+
+async def handle_game_event(
+    websocket: WebSocket, game, player_id, data, manager, service
+):
     event = data.get("event")
     game_id = game.game_id
-    
+
     try:
         if event == "place_ships":
             game.place_ships(player_id, data.get("ships", []))
             if game.status == "playing":
-                await manager.broadcast({"event": "game_start", "turn": game.players[game.turn]}, game_id)
+                await manager.broadcast(
+                    {"event": "game_start", "turn": game.players[game.turn]}, game_id
+                )
             else:
-                await manager.broadcast({"event": "player_ready", "player_id": player_id}, game_id)
-        
+                await manager.broadcast(
+                    {"event": "player_ready", "player_id": player_id}, game_id
+                )
+
         elif event == "shoot":
             result = game.shoot(player_id, data.get("x"), data.get("y"))
             broadcast_data = {
@@ -146,6 +219,8 @@ async def handle_game_event(websocket: WebSocket, game, player_id, data, manager
             else:
                 broadcast_data["next_turn"] = result["next_turn"]
             await manager.broadcast(broadcast_data, game_id)
-            
+
     except GameError as e:
-        await manager.send_personal_message({"event": "error", "message": str(e)}, websocket)
+        await manager.send_personal_message(
+            {"event": "error", "message": str(e)}, websocket
+        )

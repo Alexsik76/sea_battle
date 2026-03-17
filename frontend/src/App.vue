@@ -10,8 +10,6 @@ const store = useGameStore()
 onMounted(() => {
   if (store.gameId) {
     store.connect()
-  } else {
-    store.connectToLobby()
   }
 })
 </script>

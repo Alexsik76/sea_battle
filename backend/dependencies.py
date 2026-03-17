@@ -5,8 +5,10 @@ from game_service import GameService
 _manager = ConnectionManager()
 _game_service = GameService(_manager)
 
+
 def get_manager() -> ConnectionManager:
     return _manager
+
 
 def get_game_service() -> GameService:
     return _game_service
